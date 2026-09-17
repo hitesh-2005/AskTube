@@ -24,7 +24,7 @@ Ask questions about any YouTube video and receive accurate, grounded answers bac
 * **High-Accuracy Semantic Search:** Utilizes `intfloat/multilingual-e5-base` with asymmetric `passage:` and `query:` prefixes and normalized cosine similarity.
 * **Zero Re-indexing Overhead:** FAISS vector stores are cached in session memory and ephemeral disk storage (`.rag_cache/`), avoiding redundant transcript downloads or re-embeddings.
 * **Multi-Turn Session State:** Ask multiple questions and follow-ups in the same session without re-processing the video.
-* **Absolute ₹0 / $0 Cost Architecture:** Deployed on Streamlit Community Cloud free tier, using CPU-based local embeddings, local FAISS vector store, and Hugging Face free-tier serverless inference. Operates with no payment method required and zero risk of accidental charges.
+* **Free-Tier / ₹0 Demo Architecture:** Free-tier / ₹0 for the intended demo usage, subject to provider quotas and free credits. Runs on Streamlit Community Cloud free hosting, CPU-based local embeddings, local FAISS vector store, and Hugging Face free-tier serverless inference without configuring paid billing.
 
 ---
 
@@ -155,8 +155,21 @@ python -m unittest tests/test_api.py
 
 ## ⚖️ Free-Tier Limitations & Operational Realities
 
-To maintain an absolute **₹0 / $0 cost** without requiring a credit card:
-* **Hugging Face Serverless Inference Quota:** Operates under Hugging Face's free tier rate limits (geared towards prototyping and low-volume apps). **No credit card is required**, meaning accidental billing is impossible. If the shared free rate limit is reached (HTTP 429), requests are temporarily throttled until the rate window resets. Users can also enter their own free Hugging Face API token in the sidebar to bypass shared token quotas.
-* **Streamlit Community Cloud Resources:** Runs on the free tier container (1 GB guaranteed RAM, up to ~2.7 GB burst, 2 vCPUs). The local E5 embedding model (~500 MB) runs on CPU within these bounds. Inactive apps enter hibernation after 12 hours and wake automatically upon the next visit.
-* **Ephemeral Local Storage:** The `.rag_cache/` directory (FAISS vector store and transcript files) is stored on the container's ephemeral disk. Vector indexes persist across questions during an active session, but rebuild on container restarts or cold starts.
-* **YouTube Transcript Scraper Restrictions:** Public transcript retrieval depends on YouTube's automated caption availability. Shared cloud IPs (such as those on AWS/Streamlit Cloud) may occasionally be throttled by YouTube. AskTube catches `TranscriptBlockedError` and displays an informative warning message rather than crashing.
+AskTube is configured as **Free-tier / ₹0 for intended portfolio and demo usage**, subject to the following provider quotas and operational constraints:
+
+* **Hugging Face Inference Quota & Free Credits:**
+  * Free registered Hugging Face accounts currently receive **$0.10/month in free Inference Provider credits** alongside standard serverless rate limits.
+  * Requests are subject to provider rate limits (shared infrastructure).
+  * **When Quota is Exhausted:** If free credits are depleted or the rate limit is hit, Hugging Face returns an HTTP `429` (Rate Limit) or `402` (Payment Required / Quota Exhausted). AskTube catches these cleanly and displays: *"Free inference limit reached. Please try again later or use your own Hugging Face token in the sidebar."*
+  * **No Automatic Paid Fallback:** Hugging Face offers pay-as-you-go routed inference if an account intentionally adds a payment method and purchases additional credits. **This project does not configure a paid billing method or credit card**, and does NOT automatically upgrade or fallback to any paid service.
+  * **Visitor Bring-Your-Own-Token (BYOT):** Visitors, evaluators, and recruiters can paste their own free read-only Hugging Face access token directly into the sidebar to use their personal free quota without needing developer intervention.
+* **Streamlit Community Cloud Resources:**
+  * Runs on the free tier container (1 GB guaranteed RAM, up to ~2.7 GB burst, 2 vCPUs).
+  * The local multilingual E5 embedding model (~500 MB) runs on CPU within these bounds.
+  * Inactive apps enter hibernation after 12 hours of inactivity and automatically wake upon the next visit.
+* **Ephemeral Local Storage:**
+  * The `.rag_cache/` directory (FAISS vector store and transcript files) is stored on the container's ephemeral disk.
+  * Vector indexes persist across questions during an active session, but rebuild on container restarts or cold starts.
+* **YouTube Transcript Scraper Restrictions:**
+  * Public transcript retrieval depends on YouTube's automated caption availability.
+  * Shared cloud IPs (such as those on AWS/Streamlit Cloud) may occasionally be restricted by YouTube. When this occurs, AskTube catches `TranscriptBlockedError` and displays an informative warning message rather than crashing.

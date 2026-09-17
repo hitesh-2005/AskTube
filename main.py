@@ -119,7 +119,7 @@ MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2  
 CACHE_SCHEMA_VERSION = "v5"
 
-_NON_TRANSIENT_STATUS_CODES = {400, 401, 403, 404, 422}
+_NON_TRANSIENT_STATUS_CODES = {400, 401, 402, 403, 404, 422}
 _RETRYABLE_HTTP_STATUS = {429, 500, 502, 503, 504}
 
 
@@ -184,6 +184,8 @@ def _is_transient(e: Exception) -> bool:
 
     if HfHubHTTPError and isinstance(e, HfHubHTTPError):
         status = _status_code_of(e)
+        if status is not None and status in _NON_TRANSIENT_STATUS_CODES:
+            return False
         return status in _RETRYABLE_HTTP_STATUS if status is not None else True
 
     if isinstance(e, (ConnectionError, TimeoutError, OSError) + _REQUEST_EXCEPTIONS):
@@ -216,12 +218,17 @@ def _describe_llm_error(e: Exception) -> str:
         status = _status_code_of(e)
         if status == 401:
             return "Hugging Face authentication failed — check your HUGGINGFACEHUB_API_TOKEN."
+        if status == 402:
+            return "Free inference quota reached ($0.10 monthly free credit allowance exhausted). Please try again later or provide your own Hugging Face token in the sidebar."
         if status == 429:
-            return "Hugging Face rate limit reached — wait a moment and try again."
+            return "Free inference rate limit reached. Please wait a moment and try again, or provide your own Hugging Face token in the sidebar."
         if status == 404:
             return f"Model '{LLM_REPO_ID}' isn't available on this Inference provider."
         if status and status >= 500:
             return "The Hugging Face inference service is currently unavailable."
+    err_str = str(e).lower()
+    if "payment required" in err_str or "quota" in err_str or "credit" in err_str:
+        return "Free inference limit reached. Please try again later or use your own Hugging Face token in the sidebar."
     if isinstance(e, (ConnectionError, TimeoutError, OSError) + _REQUEST_EXCEPTIONS):
         return "A network error occurred while contacting Hugging Face."
     return str(e)

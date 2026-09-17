@@ -240,7 +240,7 @@ with st.sidebar:
         f"""
         **LLM Provider:** Hugging Face Serverless  
         **Model:** `{LLM_REPO_ID}`  
-        **Inference Cost:** ₹0 / $0 Free Tier  
+        **Inference Tier:** Free-tier / ₹0 demo usage  
         **Embeddings:** `{EMBEDDING_MODEL.split('/')[-1]}`  
         **Vector Store:** FAISS (Local CPU Cosine)  
         **Token Status:** {token_status}
@@ -250,7 +250,8 @@ with st.sidebar:
     # Allow user override for token (useful for public portfolio viewers)
     with st.expander("🔑 Hugging Face API Token (Optional Override)", expanded=not bool(current_token)):
         st.caption(
-            "AskTube uses free-tier Hugging Face serverless inference. If running without preset secrets, enter a free read token from huggingface.co/settings/tokens."
+            "Free-tier / ₹0 for the intended demo usage, subject to provider quotas and free credits ($0.10/mo allowance). "
+            "If running without preset secrets or if the shared demo quota is reached, enter your own free read token from huggingface.co/settings/tokens."
         )
         user_input_token = st.text_input(
             "API Token",
