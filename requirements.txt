@@ -1,0 +1,16 @@
+langchain
+langchain-core
+langchain-community
+langchain-huggingface
+faiss-cpu
+sentence-transformers
+transformers
+huggingface_hub
+youtube-transcript-api
+python-dotenv
+requests
+pytest
+fastapi
+uvicorn
+pydantic
+httpx

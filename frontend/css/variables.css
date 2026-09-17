@@ -1,0 +1,173 @@
+:root {
+  /* ==========================================================================
+     DESIGN-apple.md Design Tokens for AskTube
+     Authoritative Typography, Color Palette, Spacing & Shape Tokens
+     ========================================================================== */
+
+  /* --- Typography: Font Families --- */
+  /* Apple proprietary fonts with Inter as non-Apple variable equivalent */
+  --font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+  --font-body: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
+
+  /* Backward compatibility fallback */
+  --font-family-base: var(--font-body);
+  --font-family-mono: var(--font-mono);
+
+  /* --- Typography Hierarchy (Strictly from DESIGN-apple.md) --- */
+  /* Hero Display (56px / 600 / 1.07 / -0.28px) */
+  --text-hero-size: 56px;
+  --text-hero-weight: 600;
+  --text-hero-lh: 1.07;
+  --text-hero-tracking: -0.28px;
+
+  /* Display Large (40px / 600 / 1.10 / 0) */
+  --text-display-lg-size: 40px;
+  --text-display-lg-weight: 600;
+  --text-display-lg-lh: 1.10;
+  --text-display-lg-tracking: 0px;
+
+  /* Display Medium (34px / 600 / 1.47 / -0.374px) */
+  --text-display-md-size: 34px;
+  --text-display-md-weight: 600;
+  --text-display-md-lh: 1.35;
+  --text-display-md-tracking: -0.374px;
+
+  /* Lead (28px / 400 / 1.14 / +0.196px) */
+  --text-lead-size: 28px;
+  --text-lead-weight: 400;
+  --text-lead-lh: 1.25;
+  --text-lead-tracking: 0.196px;
+
+  /* Tagline (21px / 600 / 1.19 / +0.231px) */
+  --text-tagline-size: 21px;
+  --text-tagline-weight: 600;
+  --text-tagline-lh: 1.24;
+  --text-tagline-tracking: 0.231px;
+
+  /* Body Strong (17px / 600 / 1.24 / -0.374px) */
+  --text-body-strong-size: 17px;
+  --text-body-strong-weight: 600;
+  --text-body-strong-lh: 1.35;
+  --text-body-strong-tracking: -0.374px;
+
+  /* Body Regular (17px / 400 / 1.47 / -0.374px) — Apple reading pace */
+  --text-body-size: 17px;
+  --text-body-weight: 400;
+  --text-body-lh: 1.47;
+  --text-body-tracking: -0.374px;
+
+  /* Caption Strong (14px / 600 / 1.29 / -0.224px) */
+  --text-caption-strong-size: 14px;
+  --text-caption-strong-weight: 600;
+  --text-caption-strong-lh: 1.29;
+  --text-caption-strong-tracking: -0.224px;
+
+  /* Caption Regular (14px / 400 / 1.43 / -0.224px) */
+  --text-caption-size: 14px;
+  --text-caption-weight: 400;
+  --text-caption-lh: 1.43;
+  --text-caption-tracking: -0.224px;
+
+  /* Button Utility (14px / 600 / 1.29 / -0.224px) */
+  --text-button-size: 14px;
+  --text-button-weight: 600;
+  --text-button-lh: 1.29;
+  --text-button-tracking: -0.224px;
+
+  /* Fine Print (12px / 400 / 1.0 / -0.12px) */
+  --text-fine-print-size: 12px;
+  --text-fine-print-weight: 400;
+  --text-fine-print-lh: 1.25;
+  --text-fine-print-tracking: -0.12px;
+
+  /* Micro Legal (10px / 400 / 1.3 / -0.08px) */
+  --text-micro-legal-size: 10px;
+  --text-micro-legal-weight: 400;
+  --text-micro-legal-lh: 1.30;
+  --text-micro-legal-tracking: -0.08px;
+
+  /* --- Colors & Surfaces --- */
+  /* Brand: YouTube Red Accent (Refined for product quality & high contrast) */
+  --color-primary: #e60000;
+  --color-primary-hover: #cc0000;
+  --color-primary-active: #b30000;
+  --color-primary-soft: rgba(230, 0, 0, 0.06);
+  --color-primary-border: rgba(230, 0, 0, 0.16);
+  --color-primary-focus: #0071e3; /* Apple Focus Blue */
+
+  /* Text & Inks (from DESIGN-apple.md) */
+  --color-ink: #1d1d1f;          /* Near-Black Ink */
+  --color-ink-soft: #333333;     /* Ink Muted 80 */
+  --color-text-muted: #6e6e73;   /* Apple Secondary Label / Ink Muted 48 */
+  --color-text-faint: #86868b;   /* Apple Tertiary Label */
+  --color-text-on-dark: #ffffff;
+
+  /* Canvases & Surfaces (from DESIGN-apple.md) */
+  --color-canvas: #ffffff;             /* Pure White Canvas */
+  --color-canvas-parchment: #f5f5f7;   /* Signature Apple Parchment */
+  --color-canvas-soft: #f5f5f7;        /* Alias for parchment */
+  --color-surface-pearl: #fafafc;      /* Near-White Pearl Button */
+  --color-surface-tile-1: #272729;     /* Near-Black Tile 1 */
+  --color-surface-tile-2: #2a2a2c;     /* Near-Black Tile 2 */
+  --color-surface-tile-3: #252527;     /* Near-Black Tile 3 */
+  --color-surface-black: #000000;      /* Void Black for Video */
+  --color-field: #f5f5f7;              /* Input field parchment */
+
+  /* Hairlines & Dividers (from DESIGN-apple.md) */
+  --color-hairline: #e0e0e0;           /* 1px Hairline */
+  --color-hairline-soft: #f0f0f0;      /* Soft Divider */
+  --color-divider-soft: rgba(0, 0, 0, 0.06);
+
+  /* Semantic Feedback */
+  --color-success: #1b8a3e;
+  --color-success-soft: #f0fdf4;
+  --color-success-border: rgba(27, 138, 62, 0.2);
+  --color-warning: #b45309;
+  --color-warning-soft: #fffbeb;
+  --color-warning-border: rgba(180, 83, 9, 0.2);
+  --color-error: #c92a2a;
+  --color-error-soft: #fff5f5;
+  --color-error-border: rgba(201, 42, 42, 0.2);
+
+  /* --- Radii Scale (Strictly from DESIGN-apple.md) --- */
+  --rounded-none: 0px;
+  --rounded-xs: 5px;
+  --rounded-sm: 8px;     /* Dark utility buttons, inner card imagery */
+  --rounded-md: 11px;    /* Pearl Button capsules, status badges */
+  --rounded-lg: 18px;    /* Utility cards, player frame, modal cards */
+  --rounded-pill: 9999px;/* Full pill: primary CTAs, search inputs, chips */
+  --rounded-full: 50%;
+
+  /* Compatibility aliases */
+  --radius-xs: var(--rounded-xs);
+  --radius-sm: var(--rounded-sm);
+  --radius-md: var(--rounded-md);
+  --radius-lg: var(--rounded-lg);
+  --radius-full: var(--rounded-pill);
+
+  /* --- Spacing Scale (Strictly from DESIGN-apple.md) --- */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 17px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-xxl: 48px;
+  --space-section: 80px;
+
+  /* --- Elevation & Shadows (Strictly restrained from DESIGN-apple.md) --- */
+  --shadow-none: none;
+  --shadow-whisper: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-subtle: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-floating: 0 10px 30px rgba(0, 0, 0, 0.08);
+  /* Signature Apple product shadow */
+  --shadow-product: 3px 5px 30px 0 rgba(0, 0, 0, 0.22);
+  --shadow-card: var(--shadow-subtle);
+
+  /* --- Transitions & Micro-Interactions --- */
+  /* Apple signature button press micro-interaction: scale(0.96) */
+  --transition-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-normal: 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-press: 100ms cubic-bezier(0.16, 1, 0.3, 1);
+}
