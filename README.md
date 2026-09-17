@@ -24,7 +24,7 @@ Ask questions about any YouTube video and receive accurate, grounded answers bac
 * **High-Accuracy Semantic Search:** Utilizes `intfloat/multilingual-e5-base` with asymmetric `passage:` and `query:` prefixes and normalized cosine similarity.
 * **Zero Re-indexing Overhead:** FAISS vector stores are cached in session memory and ephemeral disk storage (`.rag_cache/`), avoiding redundant transcript downloads or re-embeddings.
 * **Multi-Turn Session State:** Ask multiple questions and follow-ups in the same session without re-processing the video.
-* **Absolute ₹0 / $0 Cost Design:** Deployed on Streamlit Community Cloud free tier, using CPU-based local embeddings, local FAISS vector store, and Hugging Face free-tier serverless inference.
+* **Absolute ₹0 / $0 Cost Architecture:** Deployed on Streamlit Community Cloud free tier, using CPU-based local embeddings, local FAISS vector store, and Hugging Face free-tier serverless inference. Operates with no payment method required and zero risk of accidental charges.
 
 ---
 
@@ -155,8 +155,8 @@ python -m unittest tests/test_api.py
 
 ## ⚖️ Free-Tier Limitations & Operational Realities
 
-To maintain an absolute **₹0 / $0 cost**:
-* **Hugging Face Serverless Inference:** Operates on the Hugging Face free tier. Requests may experience temporary queuing or cold starts if the model is waking up.
-* **Ephemeral Storage:** The local FAISS cache is stored in the container's ephemeral disk. Vector indexes persist across questions during an active session, but rebuild on container restarts.
-* **YouTube Transcript API:** Some videos may lack captions or have automated transcript fetching restricted by YouTube rate-limits on shared cloud IPs. In such cases, AskTube displays clear user-facing diagnostics.
-* **Community Cloud Sleep:** Inactive Streamlit Community Cloud apps enter sleep mode and wake up automatically upon the next visit.
+To maintain an absolute **₹0 / $0 cost** without requiring a credit card:
+* **Hugging Face Serverless Inference Quota:** Operates under Hugging Face's free tier rate limits (geared towards prototyping and low-volume apps). **No credit card is required**, meaning accidental billing is impossible. If the shared free rate limit is reached (HTTP 429), requests are temporarily throttled until the rate window resets. Users can also enter their own free Hugging Face API token in the sidebar to bypass shared token quotas.
+* **Streamlit Community Cloud Resources:** Runs on the free tier container (1 GB guaranteed RAM, up to ~2.7 GB burst, 2 vCPUs). The local E5 embedding model (~500 MB) runs on CPU within these bounds. Inactive apps enter hibernation after 12 hours and wake automatically upon the next visit.
+* **Ephemeral Local Storage:** The `.rag_cache/` directory (FAISS vector store and transcript files) is stored on the container's ephemeral disk. Vector indexes persist across questions during an active session, but rebuild on container restarts or cold starts.
+* **YouTube Transcript Scraper Restrictions:** Public transcript retrieval depends on YouTube's automated caption availability. Shared cloud IPs (such as those on AWS/Streamlit Cloud) may occasionally be throttled by YouTube. AskTube catches `TranscriptBlockedError` and displays an informative warning message rather than crashing.
