@@ -2,21 +2,67 @@
 
 Ask questions about any YouTube video and receive accurate, grounded answers backed by timestamped citations.
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://asktube.streamlit.app)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
+[![LangChain](https://img.shields.io/badge/LangChain-Core-orange.svg)](https://www.langchain.com/)
+[![FAISS](https://img.shields.io/badge/FAISS-CPU-blue.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Cost: Free](https://img.shields.io/badge/Cost-%E2%82%B90%20%2F%20%240-brightgreen.svg)]()
 
 ---
 
-## 🌐 Live Demo
+## 🏛️ Canonical Architecture
 
-* **Streamlit Web Application:** [AskTube on Streamlit Community Cloud](https://asktube.streamlit.app)
-* *Note:* If running without preconfigured workspace secrets, you can provide any free read-only Hugging Face access token directly in the app sidebar.
+AskTube is built around a decoupled full-stack architecture with a custom frontend and a dedicated RAG service:
+
+```mermaid
+flowchart TD
+    subgraph Client ["Client Layer"]
+        A["Authoritative Custom Frontend<br/>(HTML5 / CSS3 / Vanilla JS)"]
+        S["Optional Auxiliary Demo UI<br/>(streamlit_app.py)"]
+    end
+
+    subgraph API ["Application / API Layer"]
+        B["FastAPI Application<br/>(backend/app.py)"]
+        C["AskTube Service Layer<br/>(backend/services/rag_service.py)"]
+    end
+
+    subgraph Core ["Core RAG Engine (main.py)"]
+        D["Transcript Extraction<br/>(youtube-transcript-api)"]
+        E["Timestamp-Aware Chunking<br/>(1000 chars, 200 overlap)"]
+        F["Multilingual Embeddings<br/>(intfloat/multilingual-e5-base)"]
+        G[("FAISS Vector Index<br/>Cosine Similarity")]
+        H["Retriever & Strict Grounding<br/>(k=4, threshold=0.50)"]
+        I["LLM Generation<br/>(Qwen/Qwen3-8B)"]
+    end
+
+    A -->|REST / JSON| B
+    B --> C
+    S -.->|Direct Import| C
+    C --> D --> E --> F --> G --> H --> I
+    I -->|Grounded Answer + Citations| C
+    C -->|Structured Response| B
+    B -->|JSON| A
+```
+
+### Architectural Roles
+1. **Primary & Authoritative Frontend (`frontend/`):** The canonical AskTube user interface. Implements a bespoke split-pane desktop layout (40/60 video/conversation balance), sticky 16:9 YouTube player, custom Mobbin/Intercom/Claude design tokens, and clickable timestamp references (`design.md`). Served directly by FastAPI at `/`.
+2. **FastAPI Application Layer (`backend/app.py`):** The primary application backend. Exposes structured REST endpoints (`POST /api/videos/process`, `GET /api/videos/{video_id}`, `POST /api/videos/{video_id}/questions`, and `GET /api/health`).
+3. **AskTube Service Layer (`backend/services/rag_service.py`):** Reusable business logic orchestrating session state, vector store persistence, and retrieval flows.
+4. **Core RAG Engine (`main.py`):** The authoritative RAG implementation managing transcript acquisition, chunking, normalized E5 embeddings, cosine FAISS retrieval, untrusted transcript isolation, and grounded generation.
+5. **Auxiliary Demo UI (`streamlit_app.py`):** An **optional**, additive presentation entry point developed for simple zero-cost cloud portfolio demonstrations. It delegates directly to `rag_service` and is **not** a replacement for the canonical custom frontend.
 
 ---
 
-## ✨ Features
+## 🌐 Optional Streamlit Demo
+
+For cloud portfolio sharing where deploying full containerized web servers is not required, an optional Streamlit entry point is available:
+
+* **Hosted Demo:** [AskTube on Streamlit Community Cloud](https://asktube-app.streamlit.app)
+* *Note:* This is an auxiliary demo wrapper over the core RAG service; the primary application remains the custom frontend + FastAPI stack.
+
+---
+
+## ✨ Core Features
 
 * **Strict Transcript Grounding:** The LLM is constrained to synthesize answers strictly from retrieved video transcript chunks. If information is missing or unverified, it explicitly refuses rather than hallucinating.
 * **Timestamp-Aware Citations:** Every retrieved chunk preserves original timestamp metadata, giving users exact `[MM:SS]` references that link directly into the YouTube video.
@@ -24,43 +70,19 @@ Ask questions about any YouTube video and receive accurate, grounded answers bac
 * **High-Accuracy Semantic Search:** Utilizes `intfloat/multilingual-e5-base` with asymmetric `passage:` and `query:` prefixes and normalized cosine similarity.
 * **Zero Re-indexing Overhead:** FAISS vector stores are cached in session memory and ephemeral disk storage (`.rag_cache/`), avoiding redundant transcript downloads or re-embeddings.
 * **Multi-Turn Session State:** Ask multiple questions and follow-ups in the same session without re-processing the video.
-* **Free-Tier / ₹0 Demo Architecture:** Free-tier / ₹0 for the intended demo usage, subject to provider quotas and free credits. Runs on Streamlit Community Cloud free hosting, CPU-based local embeddings, local FAISS vector store, and Hugging Face free-tier serverless inference without configuring paid billing.
-
----
-
-## 🏗️ Architecture
-
-```mermaid
-flowchart TD
-    A[YouTube URL] --> B[Video ID Validation & oEmbed Title]
-    B --> C[youtube-transcript-api with Multilingual Fallback]
-    C --> D[Transcript Cleaning & Normalization]
-    D --> E[Timestamp-Aware Chunking<br/>1000 chars, 200 overlap]
-    E --> F[intfloat/multilingual-e5-base Embeddings<br/>Normalized Passage Vectors]
-    F --> G[(FAISS Cosine Vector Store<br/>RAM + Disk Cache)]
-    
-    H[User Question] --> I[Query Formatting<br/>'query: ...' prefix]
-    I --> J[Semantic Search<br/>Top-K = 4, Threshold = 0.50]
-    G --> J
-    
-    J -->|Below Threshold| K[Strict No-Context Refusal]
-    J -->|Above Threshold| L[Context Assembly with Untrusted Data Isolation]
-    
-    L --> M[Qwen/Qwen3-8B Inference<br/>Adaptive Token Budget: 512 / 1024]
-    M --> N[Grounded Answer + Clickable Timestamps]
-```
 
 ---
 
 ## 🛠️ Tech Stack
 
-* **Frontend & Deployment:** Streamlit (Community Cloud)
-* **Orchestration & Chains:** LangChain (`langchain-core`, `langchain-community`, `langchain-huggingface`)
-* **Vector Index:** FAISS (Local CPU Cosine Similarity)
+* **Primary Frontend:** Custom HTML5, Vanilla CSS3 (custom design system), Vanilla JavaScript (`frontend/`)
+* **Backend Application:** FastAPI, Uvicorn, Pydantic (`backend/`)
+* **RAG Orchestration:** LangChain (`langchain-core`, `langchain-community`, `langchain-huggingface`)
+* **Vector Index:** FAISS (`faiss-cpu`, cosine similarity)
 * **Embeddings:** `intfloat/multilingual-e5-base` (Sentence-Transformers)
 * **LLM:** `Qwen/Qwen3-8B` via Hugging Face Serverless Inference API
 * **Transcript Extraction:** `youtube-transcript-api`
-* **Optional API Backend:** FastAPI & Uvicorn (dual-entry architecture)
+* **Auxiliary Demo UI:** Streamlit (`streamlit_app.py`)
 
 ---
 
@@ -75,7 +97,7 @@ flowchart TD
 
 ---
 
-## 🚀 Local Setup
+## 🚀 Local Setup & Execution
 
 ### 1. Clone Repository
 ```bash
@@ -104,22 +126,24 @@ Copy `.env.example` to `.env`:
 ```bash
 cp .env.example .env
 ```
-Edit `.env` and add your free Hugging Face User Access Token:
+Edit `.env` and add your Hugging Face User Access Token:
 ```env
-HUGGINGFACEHUB_API_TOKEN=hf_your_free_token_here
-```
-*(Get a free token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens))*.
-
-### 5. Run the Application
-
-#### Streamlit Web App (Recommended)
-```bash
-streamlit run streamlit_app.py
+HUGGINGFACEHUB_API_TOKEN=hf_your_token_here
 ```
 
-#### FastAPI Backend (Optional)
+### 5. Run the Canonical Application (Recommended)
+
+Start the FastAPI application which serves both the REST API and the authoritative custom frontend:
 ```bash
 uvicorn backend.app:app --reload --port 8000
+```
+Open your browser at **`http://localhost:8000`** to access the custom AskTube web interface.
+
+### 6. Run the Optional Streamlit Demo (Alternative)
+
+If you wish to run the auxiliary Streamlit interface:
+```bash
+streamlit run streamlit_app.py
 ```
 
 ---
@@ -137,39 +161,18 @@ python -m unittest tests/test_api.py
 
 ---
 
-## ☁️ Streamlit Community Cloud Deployment Guide
+## ☁️ Optional Streamlit Cloud Deployment Guide
 
-1. Fork or push this repository to GitHub: `https://github.com/hitesh-2005/AskTube`.
-2. Go to [share.streamlit.io](https://share.streamlit.io) and log in with your GitHub account.
-3. Click **New App** and configure:
+If deploying the auxiliary Streamlit demo to Streamlit Community Cloud:
+
+1. Push this repository to GitHub: `https://github.com/hitesh-2005/AskTube`.
+2. Go to [share.streamlit.io](https://share.streamlit.io) and log in with GitHub.
+3. Click **New App** and select:
    * **Repository:** `hitesh-2005/AskTube`
    * **Branch:** `main`
    * **Main file path:** `streamlit_app.py`
-4. Expand **Advanced settings → Secrets** and add your Hugging Face token:
+4. In **Advanced settings → Secrets**, provide your Hugging Face token:
    ```toml
-   HUGGINGFACEHUB_API_TOKEN = "hf_your_free_token_here"
+   HUGGINGFACEHUB_API_TOKEN = "hf_your_token_here"
    ```
 5. Click **Deploy!**
-
----
-
-## ⚖️ Free-Tier Limitations & Operational Realities
-
-AskTube is configured as **Free-tier / ₹0 for intended portfolio and demo usage**, subject to the following provider quotas and operational constraints:
-
-* **Hugging Face Inference Quota & Free Credits:**
-  * Free registered Hugging Face accounts currently receive **$0.10/month in free Inference Provider credits** alongside standard serverless rate limits.
-  * Requests are subject to provider rate limits (shared infrastructure).
-  * **When Quota is Exhausted:** If free credits are depleted or the rate limit is hit, Hugging Face returns an HTTP `429` (Rate Limit) or `402` (Payment Required / Quota Exhausted). AskTube catches these cleanly and displays: *"Free inference limit reached. Please try again later or use your own Hugging Face token in the sidebar."*
-  * **No Automatic Paid Fallback:** Hugging Face offers pay-as-you-go routed inference if an account intentionally adds a payment method and purchases additional credits. **This project does not configure a paid billing method or credit card**, and does NOT automatically upgrade or fallback to any paid service.
-  * **Visitor Bring-Your-Own-Token (BYOT):** Visitors, evaluators, and recruiters can paste their own free read-only Hugging Face access token directly into the sidebar to use their personal free quota without needing developer intervention.
-* **Streamlit Community Cloud Resources:**
-  * Runs on the free tier container (1 GB guaranteed RAM, up to ~2.7 GB burst, 2 vCPUs).
-  * The local multilingual E5 embedding model (~500 MB) runs on CPU within these bounds.
-  * Inactive apps enter hibernation after 12 hours of inactivity and automatically wake upon the next visit.
-* **Ephemeral Local Storage:**
-  * The `.rag_cache/` directory (FAISS vector store and transcript files) is stored on the container's ephemeral disk.
-  * Vector indexes persist across questions during an active session, but rebuild on container restarts or cold starts.
-* **YouTube Transcript Scraper Restrictions:**
-  * Public transcript retrieval depends on YouTube's automated caption availability.
-  * Shared cloud IPs (such as those on AWS/Streamlit Cloud) may occasionally be restricted by YouTube. When this occurs, AskTube catches `TranscriptBlockedError` and displays an informative warning message rather than crashing.
