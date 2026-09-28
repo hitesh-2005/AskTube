@@ -4,6 +4,8 @@ import json
 import logging
 import urllib.request
 from urllib.parse import quote
+from collections import OrderedDict
+import threading
 from typing import Dict, Optional, Any
 
 import main
@@ -11,6 +13,7 @@ from backend.config import (
     MAX_QUESTION_LENGTH,
     RETRIEVER_K,
     RELEVANCE_SCORE_THRESHOLD,
+    MAX_ACTIVE_SESSIONS,
 )
 from backend.schemas import (
     ProcessVideoResponse,
@@ -58,9 +61,60 @@ class ActiveSession:
         self.title = title
 
 
+class BoundedSessionCache(OrderedDict):
+    """Thread-safe bounded LRU cache for ActiveSession instances.
+    Enforces a strict upper bound on active in-memory sessions to prevent
+    unbounded memory growth, while preserving dict/OrderedDict interface
+    for full backward compatibility."""
+
+    def __init__(self, max_size: int = 2, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.max_size = max(1, max_size)
+        self._lock = threading.RLock()
+
+    def get_session(self, video_id: str) -> Optional[ActiveSession]:
+        """Retrieve an active session, marking it as most recently used."""
+        with self._lock:
+            if video_id in self:
+                self.move_to_end(video_id)
+                return super().__getitem__(video_id)
+            return None
+
+    def store_session(self, video_id: str, session: ActiveSession) -> Optional[str]:
+        """Store an active session, evicting the least recently used session
+        if capacity is exceeded."""
+        with self._lock:
+            super().__setitem__(video_id, session)
+            self.move_to_end(video_id)
+            evicted_id = None
+            while len(self) > self.max_size:
+                evicted_id, _ = super().popitem(last=False)
+                logger.info(
+                    f"Evicted in-memory session for {evicted_id} (LRU cap={self.max_size}; "
+                    "index remains preserved on disk)."
+                )
+            return evicted_id
+
+    def __setitem__(self, key: str, value: ActiveSession):
+        self.store_session(key, value)
+
+    def __getitem__(self, key: str) -> ActiveSession:
+        with self._lock:
+            return super().__getitem__(key)
+
+    def popitem(self, last: bool = True):
+        with self._lock:
+            return super().popitem(last=last)
+
+    def clear(self):
+        with self._lock:
+            super().clear()
+
+
 class RAGService:
-    def __init__(self):
-        self._sessions: Dict[str, ActiveSession] = {}
+    def __init__(self, max_sessions: int = MAX_ACTIVE_SESSIONS):
+        self.max_sessions = max_sessions
+        self._sessions = BoundedSessionCache(max_size=max_sessions)
 
 
     def process_video(
@@ -131,7 +185,7 @@ class RAGService:
                 is_generated=is_generated,
                 title=title,
             )
-            self._sessions[video_id] = session
+            self._sessions.store_session(video_id, session)
 
             return ProcessVideoResponse(
                 video_id=video_id,
@@ -165,9 +219,9 @@ class RAGService:
             )
 
     def get_video(self, video_id: str) -> GetVideoResponse:
-        # Check active sessions
-        if video_id in self._sessions:
-            s = self._sessions[video_id]
+        # Check active in-memory sessions (marks as MRU)
+        s = self._sessions.get_session(video_id)
+        if s is not None:
             return GetVideoResponse(
                 video_id=video_id,
                 title=s.title,
@@ -200,8 +254,9 @@ class RAGService:
         )
 
     def _ensure_session_loaded(self, video_id: str) -> Optional[ActiveSession]:
-        if video_id in self._sessions:
-            return self._sessions[video_id]
+        session = self._sessions.get_session(video_id)
+        if session is not None:
+            return session
 
         # Attempt to load from cache
         index_path = main._index_cache_path(video_id, None)
@@ -228,7 +283,7 @@ class RAGService:
                         is_generated=meta.get("is_generated", False),
                         title=title,
                     )
-                    self._sessions[video_id] = session
+                    self._sessions.store_session(video_id, session)
                     return session
                 except Exception as e:
                     logger.warning(f"Failed to resurrect session from cache: {e}")

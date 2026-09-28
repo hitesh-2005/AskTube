@@ -229,5 +229,126 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(data["error"]["message"], "Captions are disabled for this video.")
 
 
+class TestBoundedSessionManagement(unittest.TestCase):
+    def setUp(self):
+        rag_service._sessions.clear()
+        self.orig_max = rag_service._sessions.max_size
+        rag_service._sessions.max_size = 2
+
+    def tearDown(self):
+        rag_service._sessions.clear()
+        rag_service._sessions.max_size = self.orig_max
+
+    def _make_dummy_session(self, video_id: str, title: str = "Test Video") -> ActiveSession:
+        return ActiveSession(
+            video_id=video_id,
+            vector_store=MagicMock(),
+            retriever=MagicMock(),
+            transcript_language="en",
+            is_generated=False,
+            title=title,
+        )
+
+    def test_single_session_stored(self):
+        s1 = self._make_dummy_session("vid1")
+        rag_service._sessions.store_session("vid1", s1)
+        self.assertEqual(len(rag_service._sessions), 1)
+        self.assertIn("vid1", rag_service._sessions)
+
+    def test_coexistence_up_to_max_limit(self):
+        s1 = self._make_dummy_session("vid1")
+        s2 = self._make_dummy_session("vid2")
+        rag_service._sessions.store_session("vid1", s1)
+        rag_service._sessions.store_session("vid2", s2)
+        self.assertEqual(len(rag_service._sessions), 2)
+        self.assertIn("vid1", rag_service._sessions)
+        self.assertIn("vid2", rag_service._sessions)
+
+    def test_lru_eviction_when_limit_exceeded(self):
+        s1 = self._make_dummy_session("vid1")
+        s2 = self._make_dummy_session("vid2")
+        s3 = self._make_dummy_session("vid3")
+        rag_service._sessions.store_session("vid1", s1)
+        rag_service._sessions.store_session("vid2", s2)
+        # Adding vid3 should evict the oldest unaccessed session (vid1)
+        evicted = rag_service._sessions.store_session("vid3", s3)
+        self.assertEqual(evicted, "vid1")
+        self.assertEqual(len(rag_service._sessions), 2)
+        self.assertNotIn("vid1", rag_service._sessions)
+        self.assertIn("vid2", rag_service._sessions)
+        self.assertIn("vid3", rag_service._sessions)
+
+    def test_lru_access_promotes_mru_and_evicts_correct_session(self):
+        s1 = self._make_dummy_session("vid1")
+        s2 = self._make_dummy_session("vid2")
+        s3 = self._make_dummy_session("vid3")
+        rag_service._sessions.store_session("vid1", s1)
+        rag_service._sessions.store_session("vid2", s2)
+
+        # Access vid1 via get_video, making vid1 MRU and vid2 LRU
+        res = rag_service.get_video("vid1")
+        self.assertEqual(res.status, "ready")
+
+        # Now store vid3; vid2 must be evicted, not vid1
+        evicted = rag_service._sessions.store_session("vid3", s3)
+        self.assertEqual(evicted, "vid2")
+        self.assertEqual(len(rag_service._sessions), 2)
+        self.assertIn("vid1", rag_service._sessions)
+        self.assertNotIn("vid2", rag_service._sessions)
+        self.assertIn("vid3", rag_service._sessions)
+
+    def test_evicted_session_resurrected_from_disk_cache(self):
+        s1 = self._make_dummy_session("vid1")
+        s2 = self._make_dummy_session("vid2")
+        s3 = self._make_dummy_session("vid3")
+        rag_service._sessions.store_session("vid1", s1)
+        rag_service._sessions.store_session("vid2", s2)
+        rag_service._sessions.store_session("vid3", s3)  # evicts vid1
+
+        self.assertNotIn("vid1", rag_service._sessions)
+
+        mock_vector_store = MagicMock()
+        mock_retriever = MagicMock()
+        with patch("os.path.isdir", return_value=True):
+            with patch("main._load_index_metadata", return_value={"transcript_language": "en", "is_generated": False}):
+                with patch("main._index_metadata_is_valid", return_value=True):
+                    with patch("main.get_embeddings", return_value=MagicMock()):
+                        with patch("main.FAISS.load_local", return_value=mock_vector_store):
+                            with patch("main.create_retriever", return_value=mock_retriever):
+                                with patch("backend.services.rag_service._fetch_youtube_title", return_value="Resurrected Title"):
+                                    resurrected = rag_service._ensure_session_loaded("vid1")
+
+        self.assertIsNotNone(resurrected)
+        self.assertEqual(resurrected.video_id, "vid1")
+        self.assertEqual(resurrected.title, "Resurrected Title")
+        self.assertIn("vid1", rag_service._sessions)
+
+    def test_session_reuse_without_disk_reload(self):
+        s1 = self._make_dummy_session("vid1")
+        rag_service._sessions.store_session("vid1", s1)
+
+        with patch("main.FAISS.load_local") as mock_load:
+            loaded = rag_service._ensure_session_loaded("vid1")
+            self.assertEqual(loaded, s1)
+            mock_load.assert_not_called()
+
+    def test_thread_safe_concurrent_access(self):
+        import concurrent.futures
+        sessions = [self._make_dummy_session(f"vid_{i}") for i in range(10)]
+
+        def worker(idx):
+            sid = f"vid_{idx}"
+            rag_service._sessions.store_session(sid, sessions[idx])
+            rag_service._sessions.get_session(sid)
+            return True
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(worker, i) for i in range(10)]
+            results = [f.result() for f in futures]
+
+        self.assertTrue(all(results))
+        self.assertLessEqual(len(rag_service._sessions), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

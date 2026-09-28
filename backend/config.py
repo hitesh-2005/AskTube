@@ -3,6 +3,7 @@ backend/config.py — Re-exports RAG configuration from main.py,
 keeping main.py as the single source of truth.
 """
 
+import os
 import main
 
 CACHE_DIR = main.CACHE_DIR
@@ -15,3 +16,6 @@ CHUNK_OVERLAP = main.CHUNK_OVERLAP
 MAX_QUESTION_LENGTH = main.MAX_QUESTION_LENGTH
 CACHE_SCHEMA_VERSION = main.CACHE_SCHEMA_VERSION
 PREFERRED_LANGUAGES = main.PREFERRED_LANGUAGES
+
+# In-memory session bounding policy (LRU)
+MAX_ACTIVE_SESSIONS = int(os.getenv("MAX_ACTIVE_SESSIONS", "2"))

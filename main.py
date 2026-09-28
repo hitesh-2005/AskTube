@@ -107,10 +107,10 @@ class TranscriptBlockedError(TranscriptError):
 load_dotenv()
 
 CACHE_DIR = os.getenv("FAISS_CACHE_DIR", ".rag_cache")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 LLM_REPO_ID = "Qwen/Qwen3-8B"
 RETRIEVER_K = int(os.getenv("RETRIEVER_K", "4"))
-RELEVANCE_SCORE_THRESHOLD = float(os.getenv("RELEVANCE_SCORE_THRESHOLD", "0.5"))
+RELEVANCE_SCORE_THRESHOLD = float(os.getenv("RELEVANCE_SCORE_THRESHOLD", "0.52"))
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
 MAX_QUESTION_LENGTH = int(os.getenv("MAX_QUESTION_LENGTH", "2000"))
@@ -614,6 +614,10 @@ def _save_index(vector_store, path: str, language: str, is_generated) -> None:
 
 
 def create_retriever(vector_store, k: int = None, threshold: float = None):
+    if getattr(vector_store, "distance_strategy", None) == DistanceStrategy.COSINE:
+        if getattr(vector_store, "override_relevance_score_fn", None) is None:
+            vector_store.override_relevance_score_fn = lambda d: 1.0 - d / 2.0
+
     return vector_store.as_retriever(
         search_type="similarity_score_threshold",
         search_kwargs={

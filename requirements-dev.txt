@@ -1,0 +1,8 @@
+-r requirements.txt
+
+# Testing & Development Tooling
+pytest
+httpx
+
+# Optional Auxiliary Streamlit Demo
+streamlit
