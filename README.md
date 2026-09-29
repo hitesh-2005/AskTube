@@ -184,7 +184,7 @@ AskTube is pre-configured for **$0 / ₹0 free cloud hosting** on **Render Free 
    * **Name:** `asktube`
    * **Environment:** `Python`
    * **Plan:** `Free`
-   * **Build Command:** `pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt`
+   * **Build Command:** `pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple && pip install -r requirements.txt`
    * **Start Command:** `uvicorn backend.app:app --host 0.0.0.0 --port $PORT --workers 1`
 6. Add the following **Environment Variables**:
    * `HUGGINGFACEHUB_API_TOKEN`: Your Hugging Face User Access Token (Marked secret)
