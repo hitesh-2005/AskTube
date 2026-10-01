@@ -9,6 +9,7 @@ Run with:  python -m unittest test_main.py -v
 """
 
 import os
+import json
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -494,6 +495,157 @@ class TestAdaptivePromptBehavior(unittest.TestCase):
     def test_model_budget_configuration(self):
         self.assertEqual(main.DEFAULT_MAX_NEW_TOKENS, 512)
         self.assertEqual(main.DETAILED_MAX_NEW_TOKENS, 1024)
+
+
+class TestFreeTranscriptAPIFallback(unittest.TestCase):
+    """Hermetic unit tests validating the FreeTranscriptAPI fallback logic (Requirements 12.A - 12.H)."""
+
+    def setUp(self):
+        self._orig_key = os.environ.get("FREETRANSCRIPT_API_KEY")
+        if "FREETRANSCRIPT_API_KEY" in os.environ:
+            del os.environ["FREETRANSCRIPT_API_KEY"]
+
+    def tearDown(self):
+        if self._orig_key is not None:
+            os.environ["FREETRANSCRIPT_API_KEY"] = self._orig_key
+        elif "FREETRANSCRIPT_API_KEY" in os.environ:
+            del os.environ["FREETRANSCRIPT_API_KEY"]
+
+    def test_primary_succeeds_fallback_not_called(self):
+        # A. primary youtube-transcript-api succeeds → fallback is NOT called
+        mock_data = MagicMock()
+        mock_data.snippets = [FakeSnippet("primary text", 0.0, 1.0)]
+        mock_data.language_code = "en"
+        mock_data.is_generated = False
+
+        with patch.object(main.YouTubeTranscriptApi, "fetch", return_value=mock_data), \
+             patch("main._fetch_transcript_freetranscriptapi") as mock_fallback:
+            snippets, lang, is_gen = main.fetch_transcript_raw("vid_1234567")
+            self.assertEqual(len(snippets), 1)
+            self.assertEqual(snippets[0].text, "primary text")
+            mock_fallback.assert_not_called()
+
+    def test_primary_blocked_fallback_succeeds(self):
+        # B. primary provider is blocked → FreeTranscriptAPI succeeds
+        block_exc = main._BLOCKED_EXC[0]("Blocked by YouTube") if main._BLOCKED_EXC else Exception("Blocked")
+        fallback_snippets = [main._CachedSnippet("fallback text", 2.0, 3.0)]
+
+        with patch.object(main.YouTubeTranscriptApi, "fetch", side_effect=block_exc), \
+             patch("main._fetch_transcript_freetranscriptapi", return_value=(fallback_snippets, "en", None)) as mock_fallback:
+            snippets, lang, is_gen = main.fetch_transcript_raw("vid_1234567")
+            self.assertEqual(len(snippets), 1)
+            self.assertEqual(snippets[0].text, "fallback text")
+            self.assertEqual(lang, "en")
+            self.assertIsNone(is_gen)
+            mock_fallback.assert_called_once_with("vid_1234567", preferred_language=None)
+
+    def test_response_converted_to_cached_snippet(self):
+        # C. FreeTranscriptAPI response is correctly converted to _CachedSnippet
+        fake_json = json.dumps({
+            "language": "en",
+            "transcript": [
+                {"text": "converted snippet", "start": 10.5, "duration": 2.5}
+            ]
+        }).encode("utf-8")
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = fake_json
+        mock_resp.__enter__.return_value = mock_resp
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            snippets, lang, is_gen = main._fetch_transcript_freetranscriptapi("vid_1234567")
+            self.assertEqual(len(snippets), 1)
+            self.assertIsInstance(snippets[0], main._CachedSnippet)
+            self.assertEqual(snippets[0].text, "converted snippet")
+            self.assertEqual(snippets[0].start, 10.5)
+            self.assertEqual(snippets[0].duration, 2.5)
+            self.assertEqual(lang, "en")
+
+    def test_timestamps_preserved(self):
+        # D. timestamps are preserved
+        fake_json = json.dumps({
+            "language": "en",
+            "transcript": [
+                {"text": "first segment", "start": 0.0, "duration": 4.5},
+                {"text": "second segment", "start": 4.5, "duration": 3.2},
+                {"text": "third segment", "start": 7.7, "duration": 5.0}
+            ]
+        }).encode("utf-8")
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = fake_json
+        mock_resp.__enter__.return_value = mock_resp
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            snippets, lang, _ = main._fetch_transcript_freetranscriptapi("vid_1234567")
+            self.assertEqual(len(snippets), 3)
+            self.assertEqual(snippets[0].start, 0.0)
+            self.assertEqual(snippets[0].duration, 4.5)
+            self.assertEqual(snippets[1].start, 4.5)
+            self.assertEqual(snippets[1].duration, 3.2)
+            self.assertEqual(snippets[2].start, 7.7)
+            self.assertEqual(snippets[2].duration, 5.0)
+
+    def test_fallback_error_preserves_blocked_handling(self):
+        # E. FreeTranscriptAPI returns an error → existing failure handling is used
+        import urllib.error
+        block_exc = main._BLOCKED_EXC[0]("Blocked by YouTube") if main._BLOCKED_EXC else Exception("Blocked")
+        http_err = urllib.error.HTTPError("http://test", 429, "Too Many Requests", {}, None)
+
+        with patch.object(main.YouTubeTranscriptApi, "fetch", side_effect=block_exc), \
+             patch("urllib.request.urlopen", side_effect=http_err):
+            with self.assertRaises(main.TranscriptBlockedError) as ctx:
+                main.fetch_transcript_raw("vid_1234567")
+            self.assertIn("blocking transcript requests", str(ctx.exception))
+
+    def test_malformed_and_empty_fallback_response_handled_safely(self):
+        # F. malformed/empty fallback response is handled safely
+        test_payloads = [
+            b"not valid json",
+            json.dumps({"transcript": []}).encode("utf-8"),
+            json.dumps({"transcript": [{"text": "   "}]}).encode("utf-8"),
+            json.dumps({"other_key": 123}).encode("utf-8"),
+            json.dumps(12345).encode("utf-8"),
+        ]
+
+        for payload in test_payloads:
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = payload
+            mock_resp.__enter__.return_value = mock_resp
+            with patch("urllib.request.urlopen", return_value=mock_resp):
+                with self.assertRaises((main.TranscriptError, json.JSONDecodeError)):
+                    main._fetch_transcript_freetranscriptapi("vid_1234567")
+
+    def test_api_key_sent_when_env_var_exists(self):
+        # G. API key is sent when FREETRANSCRIPT_API_KEY exists
+        os.environ["FREETRANSCRIPT_API_KEY"] = "sk_live_test_12345"
+        fake_json = json.dumps({"transcript": [{"text": "hello", "start": 0.0, "duration": 1.0}]}).encode("utf-8")
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = fake_json
+        mock_resp.__enter__.return_value = mock_resp
+
+        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+            main._fetch_transcript_freetranscriptapi("vid_1234567")
+            self.assertTrue(mock_urlopen.called)
+            req = mock_urlopen.call_args[0][0]
+            self.assertEqual(req.get_header("Authorization"), "Bearer sk_live_test_12345")
+
+    def test_no_api_key_allows_anonymous_mode(self):
+        # H. no API key still allows anonymous mode
+        if "FREETRANSCRIPT_API_KEY" in os.environ:
+            del os.environ["FREETRANSCRIPT_API_KEY"]
+        fake_json = json.dumps({"transcript": [{"text": "hello", "start": 0.0, "duration": 1.0}]}).encode("utf-8")
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = fake_json
+        mock_resp.__enter__.return_value = mock_resp
+
+        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+            main._fetch_transcript_freetranscriptapi("vid_1234567")
+            self.assertTrue(mock_urlopen.called)
+            req = mock_urlopen.call_args[0][0]
+            self.assertIsNone(req.get_header("Authorization"))
 
 
 if __name__ == "__main__":

@@ -386,6 +386,70 @@ def _fetch_fallback_transcript(yt_api, video_id, preferred_language=None):
     return fetched, chosen.language_code, chosen.is_generated
 
 
+class _CachedSnippet:
+    """Lightweight stand-in so cached transcripts don't require importing
+    the library's internal snippet class to deserialize."""
+    __slots__ = ("text", "start", "duration")
+
+    def __init__(self, text, start, duration):
+        self.text = text
+        self.start = start
+        self.duration = duration
+
+
+def _fetch_transcript_freetranscriptapi(video_id: str, preferred_language: str = None):
+    """Fallback transcript fetcher using FreeTranscriptAPI when primary YouTube scraping is blocked."""
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+
+    params = {"video_url": f"https://www.youtube.com/watch?v={video_id}"}
+    if preferred_language:
+        params["lang"] = preferred_language
+    query_string = urllib.parse.urlencode(params)
+    endpoint = f"https://api.freetranscriptapi.com/v1/transcript?{query_string}"
+
+    headers = {
+        "User-Agent": "AskTube/1.0",
+        "Accept": "application/json",
+    }
+    api_key = os.getenv("FREETRANSCRIPT_API_KEY", "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    req = urllib.request.Request(endpoint, headers=headers)
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    if not isinstance(data, dict):
+        raise TranscriptError("Malformed response from fallback transcript provider.")
+
+    raw_snippets = data.get("transcript")
+    if not isinstance(raw_snippets, list) or not raw_snippets:
+        raise TranscriptError("The transcript came back empty from fallback provider.")
+
+    snippets = []
+    for item in raw_snippets:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if not text or not isinstance(text, str) or not text.strip():
+            continue
+        try:
+            start = float(item.get("start", 0.0))
+            duration = float(item.get("duration", 0.0))
+        except (ValueError, TypeError):
+            start = 0.0
+            duration = 0.0
+        snippets.append(_CachedSnippet(text.strip(), start, duration))
+
+    if not snippets:
+        raise TranscriptError("The transcript came back empty from fallback provider.")
+
+    language = data.get("language") or preferred_language or "en"
+    return snippets, language, None
+
+
 def fetch_transcript_raw(video_id: str, preferred_language: str = None):
     """Returns (snippets, language_code, is_generated). Snippets are the raw
     objects with .text/.start/.duration, kept intact so chunking can map
@@ -413,10 +477,17 @@ def fetch_transcript_raw(video_id: str, preferred_language: str = None):
     except _UNAVAILABLE_EXC:
         raise TranscriptError("This video is unavailable, private, or has been removed.")
     except _BLOCKED_EXC as e:
-        logger.warning(f"YouTube transcript request blocked for video {video_id}: {e}")
-        raise TranscriptBlockedError(
-            "Couldn't retrieve this video's transcript. YouTube is temporarily blocking transcript requests from this connection. Please try again later or switch to another network."
+        logger.warning(
+            f"YouTube transcript request blocked for video {video_id}: {e}. "
+            "Attempting FreeTranscriptAPI fallback..."
         )
+        try:
+            return _fetch_transcript_freetranscriptapi(video_id, preferred_language=preferred_language)
+        except Exception as fb_err:
+            logger.warning(f"FreeTranscriptAPI fallback also failed for video {video_id}: {fb_err}")
+            raise TranscriptBlockedError(
+                "Couldn't retrieve this video's transcript. YouTube is temporarily blocking transcript requests from this connection. Please try again later or switch to another network."
+            )
     except TranscriptError:
         raise
     except Exception as e:
@@ -433,17 +504,6 @@ def fetch_transcript_raw(video_id: str, preferred_language: str = None):
 def _transcript_cache_path(video_id: str, preferred_language: str = None) -> str:
     lang_key = re.sub(r"[^A-Za-z0-9_-]", "_", preferred_language) if preferred_language else "auto"
     return os.path.join(CACHE_DIR, "transcripts", f"{video_id}__{lang_key}.json")
-
-
-class _CachedSnippet:
-    """Lightweight stand-in so cached transcripts don't require importing
-    the library's internal snippet class to deserialize."""
-    __slots__ = ("text", "start", "duration")
-
-    def __init__(self, text, start, duration):
-        self.text = text
-        self.start = start
-        self.duration = duration
 
 
 def _snippets_to_dicts(snippets):
