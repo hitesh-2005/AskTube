@@ -647,6 +647,135 @@ class TestFreeTranscriptAPIFallback(unittest.TestCase):
             req = mock_urlopen.call_args[0][0]
             self.assertIsNone(req.get_header("Authorization"))
 
+    def test_ip_blocked_triggers_fallback(self):
+        # 4. Verify IpBlocked triggers FreeTranscriptAPI fallback
+        exc = main.IpBlocked("IP blocked")
+        fallback_snippets = [main._CachedSnippet("fallback text", 0.0, 1.0)]
+        with patch.object(main.YouTubeTranscriptApi, "fetch", side_effect=exc), \
+             patch("main._fetch_transcript_freetranscriptapi", return_value=(fallback_snippets, "en", None)) as mock_fb:
+            snippets, lang, _ = main.fetch_transcript_raw("vid_123")
+            self.assertEqual(len(snippets), 1)
+            mock_fb.assert_called_once_with("vid_123", preferred_language=None)
+
+    def test_request_blocked_triggers_fallback(self):
+        # 5. Verify RequestBlocked triggers FreeTranscriptAPI fallback
+        exc = main.RequestBlocked("Request blocked")
+        fallback_snippets = [main._CachedSnippet("fallback text", 0.0, 1.0)]
+        with patch.object(main.YouTubeTranscriptApi, "fetch", side_effect=exc), \
+             patch("main._fetch_transcript_freetranscriptapi", return_value=(fallback_snippets, "en", None)) as mock_fb:
+            snippets, lang, _ = main.fetch_transcript_raw("vid_123")
+            self.assertEqual(len(snippets), 1)
+            mock_fb.assert_called_once_with("vid_123", preferred_language=None)
+
+    def test_youtube_request_failed_triggers_fallback(self):
+        # 6. Verify YouTubeRequestFailed triggers FreeTranscriptAPI fallback
+        import urllib.error
+        http_err = urllib.error.HTTPError("http://test", 429, "Too Many Requests", {}, None)
+        exc = main.YouTubeRequestFailed("vid_123", http_err)
+        fallback_snippets = [main._CachedSnippet("fallback text", 0.0, 1.0)]
+        with patch.object(main.YouTubeTranscriptApi, "fetch", side_effect=exc), \
+             patch("main._fetch_transcript_freetranscriptapi", return_value=(fallback_snippets, "en", None)) as mock_fb:
+            snippets, lang, _ = main.fetch_transcript_raw("vid_123")
+            self.assertEqual(len(snippets), 1)
+            mock_fb.assert_called_once_with("vid_123", preferred_language=None)
+
+    def test_po_token_required_triggers_fallback(self):
+        # 7. Verify PoTokenRequired triggers FreeTranscriptAPI fallback
+        exc = main.PoTokenRequired("vid_123")
+        fallback_snippets = [main._CachedSnippet("fallback text", 0.0, 1.0)]
+        with patch.object(main.YouTubeTranscriptApi, "fetch", side_effect=exc), \
+             patch("main._fetch_transcript_freetranscriptapi", return_value=(fallback_snippets, "en", None)) as mock_fb:
+            snippets, lang, _ = main.fetch_transcript_raw("vid_123")
+            self.assertEqual(len(snippets), 1)
+            mock_fb.assert_called_once_with("vid_123", preferred_language=None)
+
+    def test_failed_to_create_consent_cookie_triggers_fallback(self):
+        # 8. Verify FailedToCreateConsentCookie triggers FreeTranscriptAPI fallback
+        exc = main.FailedToCreateConsentCookie("vid_123")
+        fallback_snippets = [main._CachedSnippet("fallback text", 0.0, 1.0)]
+        with patch.object(main.YouTubeTranscriptApi, "fetch", side_effect=exc), \
+             patch("main._fetch_transcript_freetranscriptapi", return_value=(fallback_snippets, "en", None)) as mock_fb:
+            snippets, lang, _ = main.fetch_transcript_raw("vid_123")
+            self.assertEqual(len(snippets), 1)
+            mock_fb.assert_called_once_with("vid_123", preferred_language=None)
+
+    def test_video_unavailable_does_not_call_fallback(self):
+        # 9. Verify VideoUnavailable does NOT call FreeTranscriptAPI
+        exc = main.VideoUnavailable("vid_123")
+        with patch.object(main.YouTubeTranscriptApi, "fetch", side_effect=exc), \
+             patch("main._fetch_transcript_freetranscriptapi") as mock_fb:
+            with self.assertRaises(main.TranscriptError) as ctx:
+                main.fetch_transcript_raw("vid_123")
+            self.assertIn("unavailable, private, or has been removed", str(ctx.exception))
+            mock_fb.assert_not_called()
+
+    def test_invalid_video_id_does_not_call_fallback(self):
+        # 10. Verify InvalidVideoId does NOT call FreeTranscriptAPI
+        exc = main.InvalidVideoId("vid_123")
+        with patch.object(main.YouTubeTranscriptApi, "fetch", side_effect=exc), \
+             patch("main._fetch_transcript_freetranscriptapi") as mock_fb:
+            with self.assertRaises(main.TranscriptError) as ctx:
+                main.fetch_transcript_raw("vid_123")
+            self.assertIn("unavailable, private, or has been removed", str(ctx.exception))
+            mock_fb.assert_not_called()
+
+    def test_transcripts_disabled_does_not_call_fallback(self):
+        # 11. Verify TranscriptsDisabled does NOT call FreeTranscriptAPI
+        exc = main.TranscriptsDisabled("vid_123")
+        with patch.object(main.YouTubeTranscriptApi, "fetch", side_effect=exc), \
+             patch("main._fetch_transcript_freetranscriptapi") as mock_fb:
+            with self.assertRaises(main.TranscriptError) as ctx:
+                main.fetch_transcript_raw("vid_123")
+            self.assertIn("Captions are disabled", str(ctx.exception))
+            mock_fb.assert_not_called()
+
+
+class TestEmbeddingMemoryBatchSize(unittest.TestCase):
+    """Unit tests validating embedding batch size memory safety (Part C Requirements 1-3)."""
+
+    def setUp(self):
+        self._orig_emb = main._embeddings_instance
+        self._orig_env = os.environ.get("EMBEDDING_BATCH_SIZE")
+
+    def tearDown(self):
+        main._embeddings_instance = self._orig_emb
+        if self._orig_env is not None:
+            os.environ["EMBEDDING_BATCH_SIZE"] = self._orig_env
+        elif "EMBEDDING_BATCH_SIZE" in os.environ:
+            del os.environ["EMBEDDING_BATCH_SIZE"]
+
+    def test_default_embedding_batch_size_is_4(self):
+        # 1. Verify get_embeddings() passes batch_size=4 by default
+        if "EMBEDDING_BATCH_SIZE" in os.environ:
+            del os.environ["EMBEDDING_BATCH_SIZE"]
+        main._embeddings_instance = None
+
+        with patch("main.HuggingFaceEmbeddings") as mock_hf:
+            main.get_embeddings()
+            mock_hf.assert_called_once()
+            _, kwargs = mock_hf.call_args
+            self.assertEqual(kwargs.get("encode_kwargs", {}).get("batch_size"), 4)
+            self.assertTrue(kwargs.get("encode_kwargs", {}).get("normalize_embeddings"))
+
+    def test_embedding_batch_size_env_override(self):
+        # 2. Verify EMBEDDING_BATCH_SIZE environment variable can override the default
+        os.environ["EMBEDDING_BATCH_SIZE"] = "2"
+        main._embeddings_instance = None
+
+        with patch("main.HuggingFaceEmbeddings") as mock_hf:
+            main.get_embeddings()
+            mock_hf.assert_called_once()
+            _, kwargs = mock_hf.call_args
+            self.assertEqual(kwargs.get("encode_kwargs", {}).get("batch_size"), 2)
+
+    def test_batch_size_4_produces_384_dim_embeddings(self):
+        # 3. Verify batch_size=4 embedding still produces the expected 384-dimensional embeddings
+        emb = main.get_embeddings()
+        vectors = emb.embed_documents(["First sample sentence.", "Second sample sentence."])
+        self.assertEqual(len(vectors), 2)
+        self.assertEqual(len(vectors[0]), 384)
+        self.assertEqual(len(vectors[1]), 384)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,22 +26,48 @@ from youtube_transcript_api import (
 
 
 try:
-    from youtube_transcript_api import VideoUnavailable
+    from youtube_transcript_api import (
+        VideoUnavailable,
+        VideoUnplayable,
+        InvalidVideoId,
+        AgeRestricted,
+        RequestBlocked,
+        IpBlocked,
+        YouTubeRequestFailed,
+        PoTokenRequired,
+        FailedToCreateConsentCookie,
+    )
 except ImportError:
-    VideoUnavailable = None
+    from youtube_transcript_api._errors import (
+        VideoUnavailable,
+        VideoUnplayable,
+        InvalidVideoId,
+        AgeRestricted,
+        RequestBlocked,
+        IpBlocked,
+        YouTubeRequestFailed,
+        PoTokenRequired,
+        FailedToCreateConsentCookie,
+    )
 try:
     from youtube_transcript_api import TooManyRequests
 except ImportError:
     TooManyRequests = None
-try:
-    from youtube_transcript_api import IpBlocked, RequestBlocked
-except ImportError:
-    IpBlocked = None
-    RequestBlocked = None
 
-_UNAVAILABLE_EXC = tuple(e for e in (VideoUnavailable,) if e is not None)
+_UNAVAILABLE_EXC = tuple(
+    e for e in (VideoUnavailable, VideoUnplayable, InvalidVideoId, AgeRestricted) if e is not None
+)
 _RATE_LIMIT_EXC = tuple(e for e in (TooManyRequests,) if e is not None)
-_BLOCKED_EXC = tuple(e for e in (IpBlocked, RequestBlocked, TooManyRequests) if e is not None)
+_BLOCKED_EXC = tuple(
+    e for e in (
+        RequestBlocked,
+        IpBlocked,
+        YouTubeRequestFailed,
+        PoTokenRequired,
+        FailedToCreateConsentCookie,
+    )
+    if e is not None
+)
 
 from langchain_huggingface import (
     ChatHuggingFace,
@@ -179,6 +205,8 @@ def _status_code_of(e: Exception):
 def _is_transient(e: Exception) -> bool:
     if _BLOCKED_EXC and isinstance(e, _BLOCKED_EXC):
         return False
+    if _UNAVAILABLE_EXC and isinstance(e, _UNAVAILABLE_EXC):
+        return False
     if isinstance(e, TranscriptError):
         return False
 
@@ -298,7 +326,10 @@ def get_embeddings() -> HuggingFaceEmbeddings:
         cls = _E5PrefixedEmbeddings if _needs_e5_prefixes(EMBEDDING_MODEL) else HuggingFaceEmbeddings
         _embeddings_instance = cls(
             model_name=EMBEDDING_MODEL,
-            encode_kwargs={"normalize_embeddings": True},
+            encode_kwargs={
+                "normalize_embeddings": True,
+                "batch_size": int(os.getenv("EMBEDDING_BATCH_SIZE", "4")),
+            },
         )
     return _embeddings_instance
 
