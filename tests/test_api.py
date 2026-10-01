@@ -1,4 +1,6 @@
 import unittest
+import io
+import json
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from langchain_core.documents import Document
@@ -349,6 +351,56 @@ class TestBoundedSessionManagement(unittest.TestCase):
         self.assertTrue(all(results))
         self.assertLessEqual(len(rag_service._sessions), 2)
 
+    def test_diagnostic_transcript_provider_success(self):
+        import io
+        import json
+        fake_response_data = json.dumps({
+            "language": "en",
+            "title": "Python in 100 Seconds",
+            "transcript": [
+                {"text": "python a highlevel interpreted", "start": 0.16, "duration": 4.08}
+            ]
+        }).encode("utf-8")
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.read.return_value = fake_response_data
+        mock_resp.__enter__.return_value = mock_resp
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            res = client.get("/api/diagnostics/transcript-provider")
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertEqual(data["provider"], "FreeTranscriptAPI")
+            self.assertEqual(data["status"], "success")
+            self.assertEqual(data["http_status"], 200)
+            self.assertEqual(data["language"], "en")
+            self.assertEqual(data["title"], "Python in 100 Seconds")
+            self.assertEqual(data["segment_count"], 1)
+            self.assertTrue(data["has_timestamps"])
+            self.assertEqual(data["first_segment"]["start"], 0.16)
+
+    def test_diagnostic_transcript_provider_failure(self):
+        import urllib.error
+        fake_err = urllib.error.HTTPError(
+            url="http://test",
+            code=429,
+            msg="Too Many Requests",
+            hdrs={},
+            fp=io.BytesIO(b'{"error": {"code": "rate_limit", "message": "Hourly limit reached."}}')
+        )
+
+        with patch("urllib.request.urlopen", side_effect=fake_err):
+            res = client.get("/api/diagnostics/transcript-provider")
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertEqual(data["provider"], "FreeTranscriptAPI")
+            self.assertEqual(data["status"], "failed")
+            self.assertEqual(data["http_status"], 429)
+            self.assertEqual(data["error_type"], "HTTPError")
+            self.assertEqual(data["message"], "Hourly limit reached.")
+
 
 if __name__ == "__main__":
     unittest.main()
+
