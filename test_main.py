@@ -425,76 +425,64 @@ class TestTranscriptBlockedHandling(unittest.TestCase):
         self.assertEqual(len(calls), 1, "Blocked request must not be retried")
 
 
-class TestAdaptivePromptBehavior(unittest.TestCase):
-    def test_normal_question_detection_negatives(self):
-        self.assertFalse(main.is_detailed_request("What is Python?"))
-        self.assertFalse(main.is_detailed_request("What is Python used for?"))
-        self.assertFalse(main.is_detailed_request("Who created Python?"))
-        self.assertFalse(main.is_detailed_request("What is the capital of France?"))
-        self.assertFalse(main.is_detailed_request("What detailed features are mentioned?"))
-        self.assertFalse(main.is_detailed_request("Which detailed concepts are covered?"))
-        self.assertFalse(main.is_detailed_request("What are the detailed topics discussed?"))
-        self.assertFalse(main.is_detailed_request("List the detailed features mentioned in the video."))
-        self.assertFalse(main.is_detailed_request("What detailed features of Python are mentioned in the video?"))
-        self.assertFalse(main.is_detailed_request(""))
-        self.assertFalse(main.is_detailed_request(None))
-
-    def test_explicit_detail_question_detection_positives(self):
-        self.assertTrue(main.is_detailed_request("Explain in detail"))
-        self.assertTrue(main.is_detailed_request("Explain this in detail"))
-        self.assertTrue(main.is_detailed_request("Explain Python in detail"))
-        self.assertTrue(main.is_detailed_request("Explain how Python defines scope in detail"))
-        self.assertTrue(main.is_detailed_request("Explain thoroughly"))
-        self.assertTrue(main.is_detailed_request("Explain this thoroughly"))
-        self.assertTrue(main.is_detailed_request("Explain step by step"))
-        self.assertTrue(main.is_detailed_request("Describe this step by step"))
-        self.assertTrue(main.is_detailed_request("Walk me through this"))
-        self.assertTrue(main.is_detailed_request("Walk me through the process"))
-        self.assertTrue(main.is_detailed_request("Give a comprehensive explanation"))
-        self.assertTrue(main.is_detailed_request("Give me a detailed explanation"))
-        self.assertTrue(main.is_detailed_request("Explain this in depth"))
-        self.assertTrue(main.is_detailed_request("Give me an in-depth explanation"))
-        self.assertTrue(main.is_detailed_request("Elaborate on this"))
-        self.assertTrue(main.is_detailed_request("Please elaborate"))
-        self.assertTrue(main.is_detailed_request("Explain more deeply"))
-        self.assertTrue(main.is_detailed_request("Give me a deep dive into this"))
-
-    def test_normal_question_produces_concise_prompt(self):
+class TestPromptAndLCELBehavior(unittest.TestCase):
+    def test_prompt_produces_concise_grounded_format(self):
         pv = main.prompt.invoke({"context": "Sample context", "question": "What is Python?"})
         text = pv.to_string()
         self.assertIn("Summary:", text)
         self.assertIn("Key Points:", text)
         self.assertIn("- Point 1", text)
         self.assertIn("1-2 sentence answer", text)
-        self.assertNotIn("Detailed Explanation:", text)
 
-    def test_detailed_question_activates_detailed_prompt(self):
-        pv = main.prompt.invoke({"context": "Sample context", "question": "Explain Python in detail."})
-        text = pv.to_string()
-        self.assertIn("Detailed Explanation:", text)
-        self.assertIn("Key Details:", text)
-        self.assertIn("The user has explicitly requested a detailed", text)
-        self.assertNotIn("1-2 sentence answer", text)
+    def test_prompt_preserves_strict_transcript_only_grounding(self):
+        tpl = main.get_prompt_template()
+        rendered = tpl.format(context="Sample context", question="Test question")
+        self.assertIn("Use ONLY the information present in the transcript context.", rendered)
+        self.assertIn("Do NOT use outside knowledge", rendered)
+        self.assertIn("I couldn't find enough information in the transcript.", rendered)
 
-    def test_detailed_mode_preserves_strict_transcript_only_grounding(self):
-        for is_detail in (False, True):
-            tpl = main.get_prompt_template(is_detailed=is_detail)
-            rendered = tpl.format(context="Sample context", question="Test question")
-            self.assertIn("Use ONLY the information present in the transcript context.", rendered)
-            self.assertIn("Do NOT use outside knowledge", rendered)
-            self.assertIn("I couldn't find enough information in the transcript.", rendered)
-
-    def test_prompt_injection_protection_intact_in_both_modes(self):
-        for is_detail in (False, True):
-            tpl = main.get_prompt_template(is_detailed=is_detail)
-            rendered = tpl.format(context="Sample context", question="Test question")
-            self.assertIn("<transcript>", rendered)
-            self.assertIn("</transcript>", rendered)
-            self.assertIn("UNTRUSTED data taken from", rendered)
+    def test_prompt_injection_protection_intact(self):
+        tpl = main.get_prompt_template()
+        rendered = tpl.format(context="Sample context", question="Test question")
+        self.assertIn("<transcript>", rendered)
+        self.assertIn("</transcript>", rendered)
+        self.assertIn("UNTRUSTED data taken from", rendered)
 
     def test_model_budget_configuration(self):
         self.assertEqual(main.DEFAULT_MAX_NEW_TOKENS, 512)
-        self.assertEqual(main.DETAILED_MAX_NEW_TOKENS, 1024)
+
+    def test_lcel_generation_chain_structure(self):
+        from langchain_core.runnables import RunnableLambda
+        from langchain_core.messages import AIMessage
+        mock_model = RunnableLambda(lambda x: AIMessage(content="Mocked answer"))
+        chain = main.get_generation_chain(model=mock_model)
+        self.assertIsNotNone(chain)
+        res = chain.invoke({"context": "Sample context", "question": "What is Python?"})
+        self.assertEqual(res, "Mocked answer")
+
+    def test_create_rag_chain_no_context_guard(self):
+        mock_retriever = MagicMock()
+        mock_retriever.invoke.return_value = []
+        rag_chain = main.create_rag_chain(mock_retriever)
+        with patch("main.get_model") as mock_model:
+            res = rag_chain.invoke("What is Python?")
+            self.assertEqual(res, main.NO_CONTEXT_MESSAGE)
+            mock_model.assert_not_called()
+
+    def test_create_rag_chain_with_context_success(self):
+        doc = main.Document(
+            page_content="Python was created by Guido.",
+            metadata={"timestamp": "00:15", "start_seconds": 15.0},
+        )
+        mock_retriever = MagicMock()
+        mock_retriever.invoke.return_value = [doc]
+        mock_gen = MagicMock()
+        mock_gen.invoke.return_value = "Summary:\nPython created by Guido."
+        rag_chain = main.create_rag_chain(mock_retriever, generation_chain=mock_gen)
+        res = rag_chain.invoke("Who created Python?")
+        self.assertIn("Summary:\nPython created by Guido.", res)
+        self.assertIn("Retrieved Transcript Sections:", res)
+        self.assertIn("[00:15] Python was created by Guido.", res)
 
 
 class TestFreeTranscriptAPIFallback(unittest.TestCase):
@@ -750,23 +738,22 @@ class TestEmbeddingMemoryBatchSize(unittest.TestCase):
             del os.environ["EMBEDDING_BATCH_SIZE"]
         main._embeddings_instance = None
 
-        with patch("main.HuggingFaceEmbeddings") as mock_hf:
+        with patch("main.ONNXE5Embeddings") as mock_emb:
             main.get_embeddings()
-            mock_hf.assert_called_once()
-            _, kwargs = mock_hf.call_args
-            self.assertEqual(kwargs.get("encode_kwargs", {}).get("batch_size"), 4)
-            self.assertTrue(kwargs.get("encode_kwargs", {}).get("normalize_embeddings"))
+            mock_emb.assert_called_once()
+            _, kwargs = mock_emb.call_args
+            self.assertEqual(kwargs.get("batch_size"), 4)
 
     def test_embedding_batch_size_env_override(self):
         # 2. Verify EMBEDDING_BATCH_SIZE environment variable can override the default
         os.environ["EMBEDDING_BATCH_SIZE"] = "2"
         main._embeddings_instance = None
 
-        with patch("main.HuggingFaceEmbeddings") as mock_hf:
+        with patch("main.ONNXE5Embeddings") as mock_emb:
             main.get_embeddings()
-            mock_hf.assert_called_once()
-            _, kwargs = mock_hf.call_args
-            self.assertEqual(kwargs.get("encode_kwargs", {}).get("batch_size"), 2)
+            mock_emb.assert_called_once()
+            _, kwargs = mock_emb.call_args
+            self.assertEqual(kwargs.get("batch_size"), 2)
 
     def test_batch_size_4_produces_384_dim_embeddings(self):
         # 3. Verify batch_size=4 embedding still produces the expected 384-dimensional embeddings

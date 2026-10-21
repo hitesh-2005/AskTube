@@ -7,12 +7,6 @@ class ErrorDetail(BaseModel):
     message: str
 
 
-class ProcessVideoRequest(BaseModel):
-    url: str
-    language: Optional[str] = None
-    force_refresh: bool = False
-
-
 class ProcessVideoResponse(BaseModel):
     video_id: Optional[str] = None
     title: Optional[str] = None
@@ -39,10 +33,6 @@ class RetrievedSection(BaseModel):
     start_seconds: float
     end_seconds: float
     text: str
-
-
-class QuestionRequest(BaseModel):
-    question: str
 
 
 class QuestionResponse(BaseModel):

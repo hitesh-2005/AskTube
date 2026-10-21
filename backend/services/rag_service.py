@@ -329,9 +329,9 @@ class RAGService:
                     status="no_context",
                 )
 
-            # Context generation
+            # Context generation via shared LCEL chain: prompt | llm | StrOutputParser()
             context = main.format_documents(docs)
-            generation_chain = main.prompt | main.get_model_for_question(q) | main.parser
+            generation_chain = main.get_generation_chain()
 
             raw_answer = main.with_retries(
                 generation_chain.invoke,

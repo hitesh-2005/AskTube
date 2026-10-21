@@ -29,18 +29,17 @@ Demonstrate strong practical RAG engineering: reliable transcript ingestion, mul
 - Expose timestamp metadata through the application layer.
 - Support multiple questions for one video.
 - Provide clear processing, empty, and error states.
-- Implement the UI specified in `design.md`.
+- Provide an intuitive, interactive UI via Streamlit.
 
 ## 5. Non-Goals
 Do not add Kubernetes, microservices, Redis, PostgreSQL, complex authentication, multi-agent systems, web-search fallback, external knowledge retrieval, unnecessary DevOps, or other infrastructure without an explicit requirement.
 
 ## 6. Success Criteria
 - Existing RAG behavior remains intact.
-- Existing tests pass.
-- `evaluate_rag.py` runs successfully.
-- Frontend/backend use a structured contract.
+- Automated test suite passes (101 tests across core RAG, ONNX embeddings, and Streamlit).
+- Streamlit application executes in-process against RAG service.
 - Common errors are handled safely.
-- The application remains simple and understandable.
+- The application remains simple, modular, and understandable.
 
 ## 7. Definition of Done
-The documented API contract, frontend, backend application layer, tests, evaluation, setup, and README are complete and consistent.
+The Streamlit application, core RAG pipeline, test suite, setup instructions, and README are complete, consistent, and verified.
